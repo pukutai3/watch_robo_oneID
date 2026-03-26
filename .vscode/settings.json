@@ -1,0 +1,14 @@
+{
+    "git.autofetch": true,
+    "git.confirmSync": false,
+    "git.enableSmartCommit": true,
+    "git.openRepositoryInParentFolders": "always",
+    "githubPullRequests.pullBranch": "never",
+    "githubPullRequests.fileListLayout": "tree",
+    "github-actions.workflows.pinned.workflows": [
+        ".github/workflows/watch.yml"
+    ],
+    "files.exclude": {
+        "**/__pycache__": true
+    }
+}

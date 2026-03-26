@@ -1,0 +1,40 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run watcher",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "watch_robo_one.py"
+            ],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Probe Robot ID",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "watch_robo_one.py",
+                "--probe",
+                "${input:robotId}"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        }
+    ],
+    "inputs": [
+        {
+            "id": "robotId",
+            "type": "promptString",
+            "description": "確認したい Robot ID を入力",
+            "default": "1930"
+        }
+    ]
+}

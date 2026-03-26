@@ -1,0 +1,10 @@
+{
+    "recommendations": [
+        "ms-ceintl.vscode-language-pack-ja",
+        "github.vscode-pull-request-github",
+        "github.vscode-github-actions",
+        "eamodio.gitlens",
+        "ms-python.python",
+        "ms-python.vscode-pylance"
+    ]
+}
