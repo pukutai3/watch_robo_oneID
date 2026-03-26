@@ -24,7 +24,7 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
-          ROBO_ONE_LOOKAHEAD: "1"
+          ROBO_ONE_LOOKAHEAD: "10"
         run: python watch_robo_one.py
 
       - name: Commit updated state
