@@ -7,7 +7,7 @@ from html import unescape
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
 
@@ -15,6 +15,7 @@ BASE_URL = "https://www.robo-one.com/rankings/view/{robot_id}"
 STATE_FILE = Path("state.json")
 USER_AGENT = "robo-one-watch/1.0 (+https://github.com/)"
 DEFAULT_TIMEOUT = 20
+LOCAL_ENV_FILE = Path(".env.local")
 
 
 @dataclass
@@ -26,6 +27,7 @@ class RobotPage:
     country: str = ""
     comment: str = ""
     url: str = ""
+    image_url: str = ""
 
 
 def load_state() -> dict[str, Any]:
@@ -33,6 +35,21 @@ def load_state() -> dict[str, Any]:
         return {"last_seen_id": 1929}
     with STATE_FILE.open("r", encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def load_local_env() -> None:
+    if not LOCAL_ENV_FILE.exists():
+        return
+
+    for raw_line in LOCAL_ENV_FILE.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
 
 
 def save_state(state: dict[str, Any]) -> None:
@@ -92,6 +109,21 @@ def extract_comment(html: str) -> str:
     return strip_tags(match.group(1))
 
 
+def extract_image_url(html: str) -> str:
+    match = re.search(
+        r'<div class="robotInfoImg">\s*<img src="([^"]+)"',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return ""
+
+    image_url = urljoin("https://www.robo-one.com", match.group(1).strip())
+    if "/img/noimage.png" in image_url:
+        return ""
+    return image_url
+
+
 def parse_robot_page(robot_id: int, html: str) -> RobotPage:
     url = BASE_URL.format(robot_id=robot_id)
     if not html:
@@ -102,6 +134,7 @@ def parse_robot_page(robot_id: int, html: str) -> RobotPage:
     team_name = extract_cell(html, "Team name")
     country = extract_cell(html, "Country")
     comment = extract_comment(html)
+    image_url = extract_image_url(html)
 
     exists = parsed_id == str(robot_id) and bool(name)
     return RobotPage(
@@ -112,6 +145,7 @@ def parse_robot_page(robot_id: int, html: str) -> RobotPage:
         country=country,
         comment=comment,
         url=url,
+        image_url=image_url,
     )
 
 
@@ -122,22 +156,30 @@ def fetch_robot_page(robot_id: int, timeout: int) -> RobotPage:
 
 def format_notification(page: RobotPage) -> str:
     lines = [
-        f"New ROBO-ONE robot garage detected: #{page.robot_id}",
-        page.url,
+        "ROBO-ONEで新しいロボットガレージが作成されました",
+        "ーーーーーーーーーー",
+        f"URL: {page.url}",
+        "",
+        f"Robot ID: {page.robot_id}",
     ]
     if page.name:
-        lines.append(f"Robot name: {page.name}")
+        lines.append(f"ロボット名: {page.name}")
     if page.team_name:
-        lines.append(f"Team name: {page.team_name}")
-    if page.country:
-        lines.append(f"Country: {page.country}")
-    if page.comment:
-        lines.append(f"Comment: {page.comment[:180]}")
+        lines.append(f"チーム名: {page.team_name}")
     return "\n".join(lines)
 
 
-def send_discord_notification(webhook_url: str, message: str, timeout: int) -> None:
-    payload = json.dumps({"content": message}).encode("utf-8")
+def send_discord_notification(
+    webhook_url: str,
+    message: str,
+    timeout: int,
+    image_url: str = "",
+) -> None:
+    payload_dict: dict[str, Any] = {"content": message}
+    if image_url:
+        payload_dict["embeds"] = [{"image": {"url": image_url}}]
+
+    payload = json.dumps(payload_dict).encode("utf-8")
     request = Request(
         webhook_url,
         data=payload,
@@ -157,6 +199,7 @@ def post_generic_webhook(webhook_url: str, page: RobotPage, timeout: int) -> Non
             "country": page.country,
             "comment": page.comment,
             "url": page.url,
+            "image_url": page.image_url,
         }
     ).encode("utf-8")
     request = Request(
@@ -175,7 +218,12 @@ def notify(page: RobotPage, timeout: int) -> None:
     message = format_notification(page)
 
     if discord_webhook:
-        send_discord_notification(discord_webhook, message, timeout)
+        send_discord_notification(
+            discord_webhook,
+            message,
+            timeout,
+            image_url=page.image_url,
+        )
     elif generic_webhook:
         post_generic_webhook(generic_webhook, page, timeout)
     else:
@@ -206,6 +254,7 @@ def parse_args(argv: list[str]) -> dict[str, Any]:
 
 
 def main(argv: list[str]) -> int:
+    load_local_env()
     args = parse_args(argv)
     timeout = int(os.getenv("REQUEST_TIMEOUT", str(DEFAULT_TIMEOUT)))
 
