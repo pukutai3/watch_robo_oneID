@@ -5,8 +5,15 @@ on:
   schedule:
     - cron: "*/30 * * * *"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 permissions:
   contents: write
+
+concurrency:
+  group: robo-one-watch-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   watch:
@@ -14,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -33,8 +42,10 @@ jobs:
             echo "No state change"
             exit 0
           fi
+          branch="${GITHUB_REF_NAME}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add state.json
           git commit -m "Update ROBO-ONE watcher state"
-          git push
+          git pull --rebase origin "$branch"
+          git push origin "HEAD:$branch"
