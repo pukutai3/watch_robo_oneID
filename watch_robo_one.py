@@ -136,7 +136,9 @@ def parse_robot_page(robot_id: int, html: str) -> RobotPage:
     comment = extract_comment(html)
     image_url = extract_image_url(html)
 
-    exists = parsed_id == str(robot_id) and bool(name)
+    exists = parsed_id == str(robot_id) and any(
+        [name, team_name, country, comment, image_url]
+    )
     return RobotPage(
         robot_id=robot_id,
         exists=exists,
@@ -236,9 +238,8 @@ def scan_for_new_pages(start_id: int, lookahead: int, timeout: int) -> list[Robo
 
     for _ in range(lookahead):
         page = fetch_robot_page(current_id, timeout=timeout)
-        if not page.exists:
-            break
-        found_pages.append(page)
+        if page.exists:
+            found_pages.append(page)
         current_id += 1
 
     return found_pages
