@@ -3,7 +3,7 @@ name: Watch ROBO-ONE garage
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0,20,40 * * * *"
+    - cron: "7,17,27,37,47,57 * * * *"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
