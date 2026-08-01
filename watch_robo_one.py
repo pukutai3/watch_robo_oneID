@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 
 
 BASE_URL = "https://www.robo-one.com/rankings/view/{robot_id}"
+SEARCH_URL = "https://www.robo-one.com/rankings/search/"
 STATE_FILE = Path("state.json")
 USER_AGENT = "robo-one-watch/1.0 (+https://github.com/)"
 DEFAULT_TIMEOUT = 20
@@ -59,8 +60,7 @@ def save_state(state: dict[str, Any]) -> None:
     )
 
 
-def fetch_html(robot_id: int, timeout: int) -> str:
-    url = BASE_URL.format(robot_id=robot_id)
+def fetch_url(url: str, timeout: int) -> str:
     request = Request(
         url,
         headers={
@@ -77,6 +77,10 @@ def fetch_html(robot_id: int, timeout: int) -> str:
         raise
     except URLError as exc:
         raise RuntimeError(f"Failed to fetch {url}: {exc}") from exc
+
+
+def fetch_html(robot_id: int, timeout: int) -> str:
+    return fetch_url(BASE_URL.format(robot_id=robot_id), timeout=timeout)
 
 
 def strip_tags(value: str) -> str:
@@ -156,6 +160,31 @@ def fetch_robot_page(robot_id: int, timeout: int) -> RobotPage:
     return parse_robot_page(robot_id, html)
 
 
+def extract_latest_robot_id(search_html: str) -> int:
+    robot_ids = [
+        int(value)
+        for value in re.findall(r'/rankings/view/(\d+)', search_html)
+    ]
+    if not robot_ids:
+        raise RuntimeError("No robot IDs found on the ROBO-ONE search page")
+    return max(robot_ids)
+
+
+def fetch_latest_robot_id(timeout: int) -> int:
+    first_page = fetch_url(SEARCH_URL, timeout=timeout)
+    page_numbers = [
+        int(value)
+        for value in re.findall(r'/rankings/search/page:(\d+)', first_page)
+    ]
+    last_page_number = max(page_numbers, default=1)
+    last_page = (
+        first_page
+        if last_page_number == 1
+        else fetch_url(f"{SEARCH_URL}page:{last_page_number}", timeout=timeout)
+    )
+    return extract_latest_robot_id(last_page)
+
+
 def format_notification(page: RobotPage) -> str:
     lines = [
         "ROBO-ONEで新しいロボットガレージが作成されました",
@@ -232,17 +261,30 @@ def notify(page: RobotPage, timeout: int) -> None:
         print(message)
 
 
-def scan_for_new_pages(start_id: int, lookahead: int, timeout: int) -> list[RobotPage]:
-    found_pages: list[RobotPage] = []
-    current_id = start_id + 1
+def notification_target_is_configured() -> bool:
+    return bool(
+        os.getenv("DISCORD_WEBHOOK_URL", "").strip()
+        or os.getenv("NOTIFY_WEBHOOK_URL", "").strip()
+    )
 
-    for _ in range(lookahead):
-        page = fetch_robot_page(current_id, timeout=timeout)
+
+def scan_for_new_pages(start_id: int, end_id: int, timeout: int) -> list[RobotPage]:
+    found_pages: list[RobotPage] = []
+    for robot_id in range(start_id + 1, end_id + 1):
+        page = fetch_robot_page(robot_id, timeout=timeout)
         if page.exists:
             found_pages.append(page)
-        current_id += 1
 
     return found_pages
+
+
+def process_new_pages(
+    new_pages: list[RobotPage], state: dict[str, Any], timeout: int
+) -> None:
+    for page in new_pages:
+        notify(page, timeout=timeout)
+        state["last_seen_id"] = page.robot_id
+        save_state(state)
 
 
 def parse_args(argv: list[str]) -> dict[str, Any]:
@@ -266,18 +308,23 @@ def main(argv: list[str]) -> int:
 
     state = load_state()
     last_seen_id = int(os.getenv("ROBO_ONE_START_ID", state.get("last_seen_id", 1929)))
-    lookahead = int(os.getenv("ROBO_ONE_LOOKAHEAD", "10"))
+    require_notification = os.getenv("REQUIRE_NOTIFICATION", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if require_notification and not notification_target_is_configured():
+        raise RuntimeError(
+            "REQUIRE_NOTIFICATION is enabled, but no notification webhook is configured"
+        )
 
-    new_pages = scan_for_new_pages(last_seen_id, lookahead, timeout)
+    latest_robot_id = fetch_latest_robot_id(timeout=timeout)
+    new_pages = scan_for_new_pages(last_seen_id, latest_robot_id, timeout)
     if not new_pages:
         print(f"No new robot garage after #{last_seen_id}")
         return 0
 
-    for page in new_pages:
-        notify(page, timeout=timeout)
-
-    state["last_seen_id"] = new_pages[-1].robot_id
-    save_state(state)
+    process_new_pages(new_pages, state, timeout=timeout)
     print(
         f"Detected {len(new_pages)} new robot garage page(s). "
         f"Updated last_seen_id to {state['last_seen_id']}."

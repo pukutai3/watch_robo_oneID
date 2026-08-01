@@ -33,10 +33,11 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
-          ROBO_ONE_LOOKAHEAD: "20"
+          REQUIRE_NOTIFICATION: "true"
         run: python watch_robo_one.py
 
       - name: Commit updated state
+        if: always()
         run: |
           if git diff --quiet -- state.json; then
             echo "No state change"

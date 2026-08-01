@@ -5,11 +5,12 @@
 ## 仕組み
 
 - `state.json` に最後に見つけた `last_seen_id` を保存します
-- 実行時に `last_seen_id + 1` から順番にページを確認します
-- `Robot ID` と `Robot name` に実値が入っているページだけを「存在する」と判定します
-- 新規ページがあれば通知し、最後に見つけた ID を `state.json` に保存します
+- 検索一覧の最終ページから現在の最大 Robot ID を取得します
+- `last_seen_id + 1` から最大 ID までを確認し、ID の欠番を飛ばします
+- `Robot ID` とロボット情報に実値が入っているページだけを「存在する」と判定します
+- 新規ページは1件ずつ通知し、通知成功ごとに ID を `state.json` に保存します
 
-この実装は「Robot ID は作成順に連番で増える」という前提です。もし将来ギャップが入るなら、`scan_for_new_pages` の停止条件を変えてください。
+この実装は「検索一覧が Robot ID の昇順でページ分割される」という現在のサイト構造を前提にしています。構造を解析できなくなった場合は、未通知のまま成功扱いにせずエラー終了します。
 
 ## ローカル実行
 
@@ -33,6 +34,8 @@ python watch_robo_one.py --probe 1930
 2. `NOTIFY_WEBHOOK_URL`
 3. 未設定なら標準出力
 
+GitHub Actions では `REQUIRE_NOTIFICATION=true` を設定しているため、両方の Webhook が未設定ならエラー終了します。ローカル実行では `.env.local` で明示的に有効化できます。
+
 Discord 以外の Webhook を使う場合、`NOTIFY_WEBHOOK_URL` には次の JSON を POST します。
 
 ```json
@@ -53,13 +56,11 @@ Discord 以外の Webhook を使う場合、`NOTIFY_WEBHOOK_URL` には次の JS
 3. `Actions` を有効化する
 4. `Watch ROBO-ONE garage` ワークフローを実行する
 
-必要に応じて使う Secrets:
+どちらか一方が必要な Secrets:
 
 - `DISCORD_WEBHOOK_URL`
 - `NOTIFY_WEBHOOK_URL`
 
-必要に応じてワークフロー内で変更する環境変数:
+`watch.yml` は10分おきに実行する設定で、`state.json` に更新があれば自動で commit / push します。通知途中で失敗した場合も、通知成功分の状態は保存します。
 
-- `ROBO_ONE_LOOKAHEAD`
-
-`watch.yml` は 30 分おきに実行し、`state.json` に更新があれば自動で commit / push します。
+GitHub Actions の `schedule` は遅延・欠落する可能性があるため、10分間隔の厳密な実行保証はありません。即時性が必要な運用では、常駐プロセスまたは実行保証のある外部スケジューラを使用してください。
